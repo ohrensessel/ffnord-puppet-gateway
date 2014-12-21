@@ -85,6 +85,8 @@ ffnord::mesh { 'mesh_ffgc':
       mesh_mac     => "de:ad:be:ef:de:ad",
       mesh_ipv6    => "fd35:f308:a922::ff00/64,
       mesh_ipv4    => "10.35.0.1/19",
+      mesh_mtu     => "1426",
+      range_ipv4   => "10.35.0.0/16",
       mesh_peerings => "/root/mesh_peerings.yaml",
 
       fastd_secret => "/root/fastd_secret.key",
@@ -108,6 +110,10 @@ ffnord::named::zone {
   'ffgc': zone_git => 'git://somehost/ffgc-zone.git';
 }
 
+ffnord::dhcpd::static {
+  'ffgc': static_git => 'git://somehost/ffgc-static.git';
+}
+
 class {
   'ffnord::vpn::provider::hideio':
     openvpn_server => "nl-7.hide.io",
@@ -116,7 +122,7 @@ class {
     openvpn_password => "brucessecretpw",
 }
 
-ffnord::bird6::icvpn {
+ffnord::icvpn::setup {
   'gotham_city0':
     icvpn_as => 65035,
     icvpn_ipv4_address => "10.112.0.1",
@@ -135,7 +141,7 @@ class {
     allowed_hosts => '10.35.31.1'
 }
 
-class { 'ffnord::alfred': }
+class { 'ffnord::alfred': master => true }
 
 class { 'ffnord::etckeeper': }
 ```
@@ -148,6 +154,9 @@ ffnord :: mesh { '<mesh_code>':
   mesh_as,          # AS of your community
   mesh_mac,         # mac address mesh device: 52:54:00:bd:e6:d4
   mesh_ipv6,        # ipv6 address of mesh device in cidr notation, e.g. 10.35.0.1/19
+  mesh_mtu,         # mtu used, default only suitable for fastd via ipv4
+  range_ipv4,       # ipv4 range allocated to community, this might be different to
+                    # the one used in the mesh in cidr notation, e.g. 10.35.0.1/19
   mesh_ipv4,        # ipv4 address of mesh device in cidr notation, e.g. fd35:f308:a922::ff00/64
   mesh_peerings,    # path to the local peerings description yaml file
 
@@ -176,15 +185,56 @@ ffnord::named::zone {
 }
 ```
 
+#### DHCPd static type
+
+This type enables you to receive a file with static dhcp assignments from a git repository, include
+it into the dhcp configuration and setup a cron job for pulling changes in.
+By default the cronjob will pull every 30min.
+
+The provided configuration should not rely on relative path but use
+the absolute path prefixed with '/etc/dhcp/statics/${name}/'.
+The name should be the same as the community the static assignments belong to.
+There has to be a file named static.conf in the repo.
+
+```
+ffnord::dhcpd::static {
+  '<name>':
+     static_git; # dhcp static file repo
+}
+```
+
 #### ICVPN Type
 ```
-ffnord :: bird6::icvpn {
+ffnord :: icvpn::setup {
   icvpn_as,            # AS of the community peering
   icvpn_ipv4_address,  # transfer network IPv4 address
   icvpn_ipv6_address,  # transfer network IPv6 address
   icvpn_peerings = [], # Lists of icvpn names
 
   tinc_keyfile,        # Private Key for tinc
+}
+```
+
+#### IPv4 Uplink via GRE Tunnel
+This is a module for an IPv4 Uplink via GRE tunnel and BGP.
+This module and the VPN module are mutually exclusive.
+Define the ffnord::uplink::ip class once and ffnord::uplink::tunnel
+for each tunnel you want to use. See http://wiki.freifunk.net/Freifunk_Hamburg/IPv4Uplink
+for a more detailed description.
+
+```
+class {
+  'ffnord::uplink::ip':
+    nat_network,        # network of IPv4 addresses usable for NAT
+    tunnel_network,     # network of tunnel IPs to exclude from NAT
+}
+ffnord::uplink::tunnel {
+    '<name>':
+      local_public_ip,  # local public IPv4 of this gateway
+      remote_public_ip, # remote public IPv4 of the tunnel endpoint
+      local_ipv4,       # tunnel IPv4 on our side
+      remote_ip,        # tunnel IPv4 on the remote side
+      remote_as,        # ASN of the BGP server announcing a default route for you
 }
 ```
 
